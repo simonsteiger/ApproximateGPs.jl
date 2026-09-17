@@ -34,7 +34,10 @@ makedocs(;
     pages=[
         "Home" => "index.md",
         "userguide.md",
-        "API" => joinpath.(Ref("api"), ["index.md", "sparsevariational.md", "laplace.md"]),
+        "API" => joinpath.(
+            Ref("api"),
+            ["index.md", "sparsevariational.md", "laplace.md", "hilbertspace.md"],
+        ),
         "Examples" => JuliaGPsDocs.find_generated_examples(ApproximateGPs),
     ],
     checkdocs=:exports,

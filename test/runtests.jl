@@ -5,6 +5,7 @@ using Test
 
 using ChainRulesCore
 using ChainRulesTestUtils
+using Distances: Cityblock
 using Distributions
 using FiniteDifferences
 using Flux: Flux
@@ -17,7 +18,10 @@ using Zygote
 using AbstractGPs
 using ApproximateGPs
 using ApproximateGPs:
-    SparseVariationalApproximationModule, LaplaceApproximationModule, NearestNeighborsModule
+    SparseVariationalApproximationModule,
+    LaplaceApproximationModule,
+    NearestNeighborsModule,
+    HilbertSpaceApproximationModule
 
 const GROUP = get(ENV, "GROUP", "All")
 
@@ -67,6 +71,10 @@ include("test_utils.jl")
         include("NearestNeighborsModule.jl")
         println(" ")
         @info "Ran nearest neighbors tests"
+
+        include("HilbertSpaceApproximationModule.jl")
+        println(" ")
+        @info "Ran hilbert space tests"
     end
 
     if GROUP == "All" || GROUP == "CUDA"

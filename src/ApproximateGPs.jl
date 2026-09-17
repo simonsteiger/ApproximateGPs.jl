@@ -22,6 +22,10 @@ include("LaplaceApproximationModule.jl")
 include("NearestNeighborsModule.jl")
 @reexport using .NearestNeighborsModule: NearestNeighbors
 
+include("HilbertSpaceApproximationModule.jl")
+@reexport using .HilbertSpaceApproximationModule:
+    HilbertSpaceApproximation, HilbertSpaceBasis, spectral_density, spectral_weights
+
 include("deprecations.jl")
 
 include("TestUtils.jl")

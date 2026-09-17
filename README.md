@@ -32,3 +32,9 @@ Currently implemented approximations:
 
   NOTE: requires optimisation of the variational distribution even for fixed
   hyperparameters.
+
+* `HilbertSpaceApproximation`
+
+  NOTE: conjugate only, so it takes a `FiniteGP` rather than a `LatentFiniteGP`.
+  Restricted to stationary kernels with a known spectral density, and to a few input
+  dimensions.
