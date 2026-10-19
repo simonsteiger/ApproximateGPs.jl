@@ -160,7 +160,7 @@ scatter(
     color=1,
 )
 plot!(xgrid, f_post_opt; label="Approximate Posterior", color=4)
-plot!(xgrid, mean(f_exact(xgrid)); label="Exact Posterior Mean", color=2, linestyle=:dash)
+plot!(xgrid, mean(f_exact(xgrid)); label="Exact Posterior Mean", color=3, linestyle=:dash)
 #nb DisplayAs.PNG(current())
 
-# ## TODO final comment that reflects on the differences (I hope these are similar!)
+# It seems that we were able to approximate the exact GP very well with this HSGP!
