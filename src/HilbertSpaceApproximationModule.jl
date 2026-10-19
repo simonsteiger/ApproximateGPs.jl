@@ -8,6 +8,7 @@ using LinearAlgebra
 using Statistics
 using StatsBase
 
+using ChainRulesCore: ChainRulesCore
 using Distances: Euclidean
 using IrrationalConstants: log2π
 using SpecialFunctions: gamma
@@ -133,7 +134,7 @@ end
 
 A Hilbert-space (reduced-rank) approximation [1] to a Gaussian process with a stationary
 kernel, which replaces the kernel by its truncated expansion in the Laplace eigenbasis of
-a bounded box:
+a bounded domain:
 
 ```math
 k(x, x') \approx \sum_{j} S(\omega_j) \, \phi_j(x) \, \phi_j(x'),
@@ -149,14 +150,14 @@ functions, so conditioning on Gaussian observations costs ``O(n \prod(m)^2)`` ra
 every dimension or one count per dimension. The total `prod(m)` grows exponentially with
 the input dimension, which limits the method to a few dimensions.
 
-The box is `centre ± L`, where `centre` is the midpoint of the training inputs in each
+The domain is `centre ± L`, where `centre` is the midpoint of the training inputs in each
 dimension. Give either `c`, which sets `L` to `c` times the inputs' half-range in each
 dimension, or `L` directly. The approximation degrades near the boundary, so `c` must
 exceed 1; [2] gives guidance on choosing `c` and `m` together against the kernel's
 lengthscale.
 
 Predictions are those of the reduced-rank model rather than of the original GP. Outside
-the box they are meaningless: the basis functions there are a periodic continuation of
+the domain they are meaningless: the basis functions there are a periodic continuation of
 their behaviour inside it.
 
 ```jldoctest
@@ -197,7 +198,7 @@ function HilbertSpaceApproximation(; m, c=nothing, L=nothing)
     if c !== nothing
         c > 1 || throw(
             ArgumentError(
-                "the boundary factor c must exceed 1 so that the box contains the inputs, got $c",
+                "the boundary factor c must exceed 1 so that the domain contains the inputs, got $c",
             ),
         )
     else
@@ -230,9 +231,9 @@ end
     HilbertSpaceBasis(approx::HilbertSpaceApproximation, x::AbstractVector)
 
 The Laplace eigenbasis that [`HilbertSpaceApproximation`](@ref) `approx` induces on the
-box spanned by the inputs `x`, held separately from any kernel.
+domain around the inputs `x`, held separately from any kernel.
 
-The box is `centre ± L`, where `centre` is the midpoint of `x` in each dimension and `L`
+The domain is `centre ± L`, where `centre` is the midpoint of `x` in each dimension and `L`
 comes from `approx`. On it, the Dirichlet eigenfunctions of the Laplacian are
 
 ```math
@@ -247,7 +248,7 @@ indexed by the multi-index ``j \in \{1, \dots, m_1\} \times \dots \times \{1, \d
 Calling a basis, `basis(x)`, gives the `length(x) × prod(m)` matrix whose `(i, j)` entry
 is ``\phi_j(x_i)``. Building the basis once and calling it on several input vectors is
 the only way to evaluate the same approximate process at new points: a basis built afresh
-from new inputs sits on a different box, which changes what every coefficient means.
+from new inputs sits on a different domain, which changes what every coefficient means.
 
 ```jldoctest
 julia> basis = HilbertSpaceBasis(HilbertSpaceApproximation(; m=5), range(-1, 1; length=20));
@@ -276,9 +277,14 @@ _coordinates(xᵢ::AbstractVector{<:Real}) = xᵢ
 # Frequency vectors for the Cartesian product of 1..mᵈ over the dimensions, as a
 # prod(m) × D matrix whose rows are the ωⱼ.
 function _frequencies(m::NTuple{D,Int}, L::AbstractVector{<:Real}) where {D}
-    js = vec(collect(Iterators.product(map(Base.OneTo, m)...)))
-    return [j[d] * π / (2 * L[d]) for j in js, d in 1:D]
+    return _multi_indices(m) .* π ./ (2 .* transpose(L))
 end
+
+# The prod(m) × D integer matrix whose rows enumerate the multi-indices j.
+function _multi_indices(m::NTuple{D,Int}) where {D}
+    return [Tuple(j)[d] for j in vec(CartesianIndices(m)), d in 1:D]
+end
+ChainRulesCore.@non_differentiable _multi_indices(::Any)
 
 function HilbertSpaceBasis(approx::HilbertSpaceApproximation, x::AbstractVector)
     # `dim` returns 0 for input types that have not opted in, which would silently give
@@ -305,12 +311,12 @@ function (basis::HilbertSpaceBasis)(x::AbstractVector)
         ),
     )
     L, centre, Ω = basis.L, basis.centre, basis.Ω
-    return [
-        prod(
-            sin(Ω[j, d] * (_coordinates(xᵢ)[d] - centre[d] + L[d])) / sqrt(L[d]) for
-            d in 1:D
-        ) for xᵢ in x, j in axes(Ω, 1)
-    ]
+    # Whole-array broadcasts per dimension rather than a per-element comprehension:
+    # reverse-mode AD records one pullback per broadcast instead of one per entry.
+    return mapreduce((a, b) -> a .* b, 1:D) do d
+        xd = map(xᵢ -> _coordinates(xᵢ)[d], x)
+        return sin.((xd .- centre[d] .+ L[d]) .* transpose(view(Ω, :, d))) ./ sqrt(L[d])
+    end
 end
 
 """
@@ -351,13 +357,21 @@ Writing ``\Psi`` for the [`HilbertSpaceBasis`](@ref) scaled by the
 function AbstractGPs.posterior(
     approx::HilbertSpaceApproximation, fx::FiniteGP{<:GP}, y::AbstractVector{<:Real}
 )
+    return first(_posterior_and_whitened_basis(approx, fx, y))
+end
+
+# Also returns Ψ at the training inputs, which `approx_lml` needs and which dominates the
+# cost of differentiating it.
+function _posterior_and_whitened_basis(
+    approx::HilbertSpaceApproximation, fx::FiniteGP{<:GP}, y::AbstractVector{<:Real}
+)
     basis = HilbertSpaceBasis(approx, fx.x)
     w = spectral_weights(basis, fx.f.kernel)
     Ψ = _whitened_basis(basis, w, fx.x)
     Σy_inv_Ψ = fx.Σy \ Ψ
     A = cholesky(Symmetric(I + Ψ' * Σy_inv_Ψ))
     α = A \ (Σy_inv_Ψ' * (y - mean(fx)))
-    return ApproxPosteriorGP(approx, fx.f, (basis=basis, w=w, A=A, α=α))
+    return ApproxPosteriorGP(approx, fx.f, (basis=basis, w=w, A=A, α=α)), Ψ
 end
 
 #
@@ -429,8 +443,7 @@ both the log determinant and the quadratic form into `prod(m)`-sized problems.
 function API.approx_lml(
     approx::HilbertSpaceApproximation, fx::FiniteGP{<:GP}, y::AbstractVector{<:Real}
 )
-    f_post = AbstractGPs.posterior(approx, fx, y)
-    Ψ = _whitened_basis(f_post.data.basis, f_post.data.w, fx.x)
+    f_post, Ψ = _posterior_and_whitened_basis(approx, fx, y)
     δ = y - mean(fx)
     Σy_inv_δ = fx.Σy \ δ
     quadform = δ'Σy_inv_δ - (Ψ'Σy_inv_δ)'f_post.data.α

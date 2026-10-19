@@ -28,6 +28,7 @@ makedocs(;
             "examples/a-regression/index.md",
             "examples/b-classification/index.md",
             "examples/c-comparisons/index.md",
+            "examples/d-hilbert-space/index.md",
         ],
     ),
     modules=[ApproximateGPs],

@@ -93,7 +93,7 @@
         @test basis.centre ≈ [0.0]
         @test basis.L ≈ [1.5 * 3.0]
 
-        # Rebuilding the basis from the new inputs moves the box, so the coefficients
+        # Rebuilding the basis from the new inputs moves the domain, so the coefficients
         # would no longer mean the same thing.
         xt = collect(range(-1.0, 1.0; length=5))
         @test basis(xt) != HilbertSpaceBasis(approx, xt)(xt)
@@ -144,6 +144,19 @@
         @test lml ≈ objective(θ)
         @test grad ≈ only(FiniteDifferences.grad(central_fdm(5, 1), objective, θ)) rtol =
             1e-5
+
+        X = ColVecs(4 .* rand(rng, 2, 30) .- 2)
+        yX = sin.(X.X[1, :]) .* cos.(X.X[2, :])
+        function objective_2d(θ)
+            kernel = exp(θ[1]) * with_lengthscale(Matern52Kernel(), exp.(θ[2:3]))
+            return approx_lml(
+                HilbertSpaceApproximation(; m=(15, 15), c=2.0), GP(kernel)(X, σ²), yX
+            )
+        end
+
+        θ_2d = [0.0, -0.2, 0.1]
+        @test only(Zygote.gradient(objective_2d, θ_2d)) ≈
+            only(FiniteDifferences.grad(central_fdm(5, 1), objective_2d, θ_2d)) rtol = 1e-5
     end
 
     @testset "constructor validation" begin
