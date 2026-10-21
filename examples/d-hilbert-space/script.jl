@@ -164,3 +164,19 @@ plot!(xgrid, mean(f_exact(xgrid)); label="Exact Posterior Mean", color=3, linest
 #nb DisplayAs.PNG(current())
 
 # It seems that we were able to approximate the exact GP very well with this HSGP!
+
+# !!! note "PPL usage"
+#
+# In a probabilistic program, we sample `z` instead of marginalising it out.
+# Suppose we observe predictors `x` and condition on binary outcomes `y`, the body
+# of our probabilistic program could look like this:
+#
+# ```julia
+# z ~ N(0, I)
+# w = spectral_weights(basis, kernel)
+# Φ = basis(x)
+# p = logistic.(Φ * (w .* z))
+# for i in eachindex(y)
+#     y[i] ~ Bernoulli(p[i])
+# end
+# ```
